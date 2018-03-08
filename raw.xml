@@ -59,6 +59,7 @@ void main(void)
 
 
 
+
 ]]></vertex>
 <geom>
 <![CDATA[#version 400
@@ -101,6 +102,7 @@ void main() {
   }
   EndPrimitive();
 }
+
 
 
 
@@ -165,6 +167,7 @@ void main(void)
 
 
 
+
 ]]></frag>
 <R2TVert>
 <![CDATA[#version 400
@@ -205,6 +208,7 @@ void  main ()
 
 
 
+
 ]]></R2TVert>
 <R2TFrag>
 <![CDATA[#version 400
@@ -224,6 +228,8 @@ const int raytraceDepth = 42;
 const int numSpheres = 6;
 const float decay = 0.4;
 
+const vec3 lightSource = vec3(6,4,3);
+
 //example data structures
 struct Ray
 {
@@ -236,6 +242,7 @@ struct Sphere
 {
 	vec3 centre;
 	float radius;
+	float radius2;
 	vec3 colour;
 };
 struct Plane
@@ -261,27 +268,30 @@ float mag(vec3 v){
 void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 {
 	float u1,u2,u;
-	vec3 deltaP = -(ray.origin - sph.centre);
-	float sqrtarg = pow(dot(ray.dir,deltaP),2)-mag(deltaP)+pow(sph.radius,2);
-	if (sqrtarg>=0){
-		u1 = -1*dot(ray.dir,deltaP) + pow(sqrtarg,0.5);
-		u2 = -1*dot(ray.dir,deltaP) - pow(sqrtarg,0.5);
-		u = (u1<u2) ? u1 : u2;
-		if (u>=0 && u<intersect.t){
-			intersect.point = u*ray.dir;
-			intersect.hit = 1;
-			intersect.normal = normalize(intersect.point - sph.centre);
-			ray.colour += pow(decay,ray.depth)*sph.colour;
-			intersect.t = u;
-		}
+	vec3 deltaP = (sph.centre -ray.origin);
+	float d  = dot(deltaP,ray.dir);
+	float sub = mag(deltaP)-d*d;
+	if (sub>sph.radius2) return;
+	float sqr = sqrt(sph.radius2-sub);
+	u1 = d + sqr;
+	u2 = d - sqr;
+	u = (u1<u2 && u1>=0) ? u1 : u2;
+	
+	if (u>=0 && u<intersect.t){
+		intersect.point = u*ray.dir;
+		intersect.hit = 1;
+		intersect.normal = normalize(intersect.point - sph.centre);
+		ray.colour += pow(decay,ray.depth)*sph.colour;
+		intersect.t = u;
 	}
+	
     
 }
 
 void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 {	
 	float denom = dot(ray.dir,pl.normal);
-	if (denom > 1e-10){
+	if (denom >= 1e-10){
 		float u = dot(ray.origin-pl.point,pl.normal)/denom;
 		if (u<intersect.t && u >=0){
 			intersect.hit = 1;
@@ -316,11 +326,22 @@ float rnd()
 	seed = int(mod(float(seed)*1364.0+626.0, 509.0));
 	return float(seed)/509.0;
 }
-
-vec3 computeShadow(in Intersection intersect)
+float epsilon = 1e-6;
+bool computeShadow(in Intersection intersect)
 {
-	//TODO implement shadow computation
-	return vec3(0,0,0);
+	// ray from intersect to the light source
+	Ray shadowRay;
+	
+	shadowRay.dir = -intersect.point + lightSource + seed;
+	shadowRay.origin = intersect.point + shadowRay.dir*epsilon ;
+	shadowRay.depth = 1;
+	Intersection i2;
+	i2.hit = 0;
+	i2.t = FLT_MAX;
+	// see if there are any intersections
+	Intersect(shadowRay, i2);
+	if (i2.t >0) return bool(i2.hit);
+	return false;
 }
 
 void main()
@@ -349,26 +370,32 @@ void main()
 	plane.colour = vec3(1, 1, 1);
 	seed = int(mod(dir.x * dir.y * 39786038.0, 65536.0));
 	//scene definition end
+	for (int k; k<numSpheres;k++){
+		sphere[k].radius2 = pow(sphere[k].radius,2);
+	}
 	// float epsilon = 1e-10;
 	vec4 colour = vec4(0,0,0,1);
-	//TODO implement ray tracing main loop here
-	float epsilon = 1e-6;
+	
 	Ray ray;
 	ray.origin = (mvMatrixScene*vec4(0,0,0,1)).xyz;// vec3(0,0,0);//(mvMatrix*vec4(0,0,0,1)).xyz;
 	ray.dir = -1*normalize(mvMatrixScene*vec4(dir,0)).xyz;
 	
-	for(int d = 0; d < 20;d++){
+	for(int d = 0; d < 42;d++){
 		ray.depth = d;
 		ray.colour = vec3(0,0,0);
 		Intersection i;
+		i.hit = 0;
 		i.t = FLT_MAX;
 		Intersect(ray,i);
 		if (i.hit != 0) {
-			colour += pow(decay,d)*vec4(ray.colour,0);
-			// computeShadow(intersection) {extension}
+			colour += pow(decay,d)*vec4(ray.colour,1);
+			
+			if (computeShadow(i)) {
+				colour = vec4(colour.xyz/1.5,0);
+			}
 			ray.origin = i.point;
 			ray.origin += epsilon * i.normal;
-			ray.dir = normalize(reflect(ray.dir,i.normal));
+			ray.dir = reflect(ray.dir,i.normal);
 		} else {
 			break;
 		}
@@ -376,6 +403,7 @@ void main()
 	}
 	outcolour = colour;
 }
+
 
 
 
