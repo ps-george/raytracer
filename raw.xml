@@ -234,7 +234,7 @@ uniform mat3 normalMatrix; //mv matrix without translation
 
 const int raytraceDepth = 42;
 const int numSpheres = 6;
-const float decay = 0.5;
+const float decay = 0.3;
 
 const vec3 lightSource = vec3(6,4,3);
 
@@ -243,6 +243,7 @@ struct Ray
 {
 	vec3 origin;
 	vec3 dir;
+	vec3 colour;
 	int depth;
 };
 struct Sphere
@@ -264,7 +265,6 @@ struct Intersection
     float t; //closest hit
     vec3 point;	// hit point
     vec3 normal;	// normal
-	vec3 colour;
     int hit;	//did it hit?
 	float r; // reflection constant
 };
@@ -295,7 +295,7 @@ void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 		intersect.normal = normalize(intersect.point - sph.centre);
 		
 		if (u<intersect.t){
-			intersect.colour += pow(decay,ray.depth)*sph.colour;
+			ray.colour += pow(decay,ray.depth)*sph.colour;
 			intersect.t=u;
 		}
 	}
@@ -316,7 +316,7 @@ void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 			if (bool((int(p.x)+int(p.y)+int(p.z))%2)){
 				col = -pl.colour;
 			}
-			intersect.colour += pow(decay,ray.depth)*col;
+			ray.colour += pow(decay,ray.depth)*col;
 			intersect.normal = normalize(pl.normal);
 			intersect.t = u;
 		}
@@ -412,14 +412,15 @@ void main()
 	ray.origin = ((mvMatrixScene)*vec4(0,0,0,1)).xyz;// vec3(0,0,0);//(mvMatrix*vec4(0,0,0,1)).xyz;
 	ray.dir = normalize((mvMatrixScene)*vec4(dir,0)).xyz;
 	
-	for(int d = 0; d < 5;d++){
+	for(int d = 0; d < 10;d++){
 		ray.depth = d;
+		ray.colour = vec3(0,0,0);
 		Intersection i;
 		i.hit = 0;
 		i.t = FLT_MAX;
 		Intersect(ray,i);
 		if (i.hit != 0) {
-			colour += pow(decay,d)*vec4(i.colour,1);
+			colour += pow(decay,d)*vec4(ray.colour,1);
 			
 			if (computeShadow(i)) {
 				colour = vec4(colour.xyz/2,0);
