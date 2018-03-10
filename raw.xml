@@ -60,6 +60,8 @@ void main(void)
 
 
 
+
+
 ]]></vertex>
 <geom>
 <![CDATA[#version 400
@@ -102,6 +104,8 @@ void main() {
   }
   EndPrimitive();
 }
+
+
 
 
 
@@ -168,6 +172,8 @@ void main(void)
 
 
 
+
+
 ]]></frag>
 <R2TVert>
 <![CDATA[#version 400
@@ -209,6 +215,8 @@ void  main ()
 
 
 
+
+
 ]]></R2TVert>
 <R2TFrag>
 <![CDATA[#version 400
@@ -226,7 +234,7 @@ uniform mat3 normalMatrix; //mv matrix without translation
 
 const int raytraceDepth = 42;
 const int numSpheres = 6;
-const float decay = 0.4;
+const float decay = 0.5;
 
 const vec3 lightSource = vec3(6,4,3);
 
@@ -235,7 +243,6 @@ struct Ray
 {
 	vec3 origin;
 	vec3 dir;
-	vec3 colour;
 	int depth;
 };
 struct Sphere
@@ -257,6 +264,7 @@ struct Intersection
     float t; //closest hit
     vec3 point;	// hit point
     vec3 normal;	// normal
+	vec3 colour;
     int hit;	//did it hit?
 	float r; // reflection constant
 };
@@ -264,7 +272,7 @@ struct Intersection
 float mag(vec3 v){
 	return dot(v,v);
 }
-
+float epsilon = 1e-6;
 void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 {
 	float u1,u2,u;
@@ -275,14 +283,21 @@ void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 	float sqr = sqrt(sph.radius2-sub);
 	u1 = d + sqr;
 	u2 = d - sqr;
-	u = (u1<u2 && u1>=0) ? u1 : u2;
-	
-	if (u>=0 && u<intersect.t){
+	if (u1<u2 && u1 > 0){
+		u = u1;
+	}
+	if (u2<u1 && u2 > 0){
+		u = u2;
+	}
+	if (u>0){
 		intersect.point = u*ray.dir;
 		intersect.hit = 1;
 		intersect.normal = normalize(intersect.point - sph.centre);
-		ray.colour += pow(decay,ray.depth)*sph.colour;
-		intersect.t = u;
+		
+		if (u<intersect.t){
+			intersect.colour += pow(decay,ray.depth)*sph.colour;
+			intersect.t=u;
+		}
 	}
 	
     
@@ -290,10 +305,10 @@ void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 
 void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 {	
-	float denom = dot(ray.dir,pl.normal);
+	float denom = -dot(ray.dir,pl.normal);
 	if (denom >= 1e-10){
 		float u = dot(ray.origin-pl.point,pl.normal)/denom;
-		if (u<intersect.t && u >=0){
+		if (u<intersect.t && u >epsilon){
 			intersect.hit = 1;
 			vec3 p = u*ray.dir;
 			intersect.point = p;
@@ -301,8 +316,8 @@ void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 			if (bool((int(p.x)+int(p.y)+int(p.z))%2)){
 				col = -pl.colour;
 			}
-			ray.colour += pow(decay,ray.depth)*col;
-			intersect.normal = pl.normal;
+			intersect.colour += pow(decay,ray.depth)*col;
+			intersect.normal = normalize(pl.normal);
 			intersect.t = u;
 		}
 	}
@@ -311,13 +326,24 @@ void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 Sphere sphere[numSpheres];
 Plane plane;
 void Intersect(inout Ray r, inout Intersection i)
-{
-	// For each object in the scene, do intersect function
-	plane_intersect(plane, r, i);
-
+{	float closest = FLT_MAX;
+	Intersection intersect;
+	
 	for (int j=0;j<numSpheres;j++){
-		sphere_intersect(sphere[j],r,i);
+		intersect.t = closest;
+		sphere_intersect(sphere[j],r,intersect);
+		if (intersect.hit == 1 && intersect.t < closest){
+			i = intersect;
+			closest = intersect.t;
+		}
 	}
+	// For each object in the scene, do intersect function
+	plane_intersect(plane, r, intersect);
+	if (intersect.hit == 1 && intersect.t < closest){
+		i = intersect;
+		closest = intersect.t;
+	}
+
 }
 
 int seed = 0;
@@ -326,21 +352,21 @@ float rnd()
 	seed = int(mod(float(seed)*1364.0+626.0, 509.0));
 	return float(seed)/509.0;
 }
-float epsilon = 1e-6;
+
 bool computeShadow(in Intersection intersect)
 {
 	// ray from intersect to the light source
 	Ray shadowRay;
 	
-	shadowRay.dir = -intersect.point + lightSource + seed;
-	shadowRay.origin = intersect.point + shadowRay.dir*epsilon ;
+	shadowRay.dir = (intersect.point -lightSource)*seed;
+	shadowRay.origin = intersect.point + shadowRay.dir;
 	shadowRay.depth = 1;
 	Intersection i2;
 	i2.hit = 0;
 	i2.t = FLT_MAX;
 	// see if there are any intersections
 	Intersect(shadowRay, i2);
-	if (i2.t >0) return bool(i2.hit);
+	return bool(i2.hit);
 	return false;
 }
 
@@ -370,6 +396,12 @@ void main()
 	plane.colour = vec3(1, 1, 1);
 	seed = int(mod(dir.x * dir.y * 39786038.0, 65536.0));
 	//scene definition end
+	//mat4 transMat1;
+	//transMat1[0] = vec4(-1.0,0.0,0.0,0.0);
+	//transMat1[1] = vec4(0.0,-1.0,0.0,0.0);
+	//transMat1[2] = vec4(0.0,0.0,-1.0,0.0);
+	//transMat1[3] = vec4(0.0,0.0,0.0,1.0);
+
 	for (int k; k<numSpheres;k++){
 		sphere[k].radius2 = pow(sphere[k].radius,2);
 	}
@@ -377,21 +409,21 @@ void main()
 	vec4 colour = vec4(0,0,0,1);
 	
 	Ray ray;
-	ray.origin = (mvMatrixScene*vec4(0,0,0,1)).xyz;// vec3(0,0,0);//(mvMatrix*vec4(0,0,0,1)).xyz;
-	ray.dir = -1*normalize(mvMatrixScene*vec4(dir,0)).xyz;
+	ray.origin = ((mvMatrixScene)*vec4(0,0,0,1)).xyz;// vec3(0,0,0);//(mvMatrix*vec4(0,0,0,1)).xyz;
+	ray.dir = normalize((mvMatrixScene)*vec4(dir,0)).xyz;
 	
-	for(int d = 0; d < 42;d++){
+	for(int d = 0; d < 5;d++){
 		ray.depth = d;
-		ray.colour = vec3(0,0,0);
 		Intersection i;
 		i.hit = 0;
 		i.t = FLT_MAX;
 		Intersect(ray,i);
 		if (i.hit != 0) {
-			colour += pow(decay,d)*vec4(ray.colour,1);
+			colour += pow(decay,d)*vec4(i.colour,1);
 			
 			if (computeShadow(i)) {
-				colour = vec4(colour.xyz/1.5,0);
+				colour = vec4(colour.xyz/2,0);
+				// add blinn phong shading
 			}
 			ray.origin = i.point;
 			ray.origin += epsilon * i.normal;
@@ -403,6 +435,8 @@ void main()
 	}
 	outcolour = colour;
 }
+
+
 
 
 
