@@ -243,7 +243,7 @@ const float decay = 0.4;
 
 const vec3 lightSource = vec3(6,4,3);
 // Blinn-Phong
-vec3 diffuse = vec3(1,0,0);
+vec3 diffuse = vec3(0,0,0);
 vec3 specular = vec3(0.1,0.1,0.1);
 float ambientCoefficent = 0.8;
 float shininess = 10.0;
@@ -327,10 +327,10 @@ void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 		intersect.hit = 1;
 		intersect.normal = normalize(intersect.point - sph.centre);
 		
-		if (u<intersect.t){
+		//if (u<intersect.t){
 			intersect.colour = sph.colour;//
 			intersect.t=u;
-		}
+		//}
 	}
 	
     
@@ -456,7 +456,7 @@ void main()
 		if (i.hit != 0) {
 			if (i.t<closest){
 				closest = i.t;
-				colour = vec4(blinn_phong(i.colour,i.point,i.normal,true),1);
+				colour += pow(decay,d)*vec4(blinn_phong(i.colour,i.point,i.normal,true),1);
 				//colour += pow(decay,d)*vec4(i.colour,1);
 				
 				if (computeShadow(i)) {
