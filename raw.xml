@@ -79,6 +79,7 @@ void main(void)
 
 
 
+
 ]]></vertex>
 <geom>
 <![CDATA[#version 400
@@ -121,6 +122,7 @@ void main() {
   }
   EndPrimitive();
 }
+
 
 
 
@@ -225,6 +227,7 @@ void main(void)
 
 
 
+
 ]]></frag>
 <R2TVert>
 <![CDATA[#version 400
@@ -285,6 +288,7 @@ void  main ()
 
 
 
+
 ]]></R2TVert>
 <R2TFrag>
 <![CDATA[#version 400
@@ -301,7 +305,7 @@ uniform mat4 mvMatrixScene;
 uniform mat4 pMatrix;
 uniform mat3 normalMatrix; //mv matrix without translation
 
-const int raytraceDepth = 10;
+const int raytraceDepth = 42;
 const int numSpheres = 6;
 const float decay = 0.3;
 vec3 lightSource = vec3(6,4,3);
@@ -311,7 +315,7 @@ vec3 specular = vec3(0.3,0.3,0.3);
 float ambientCoefficent = 1.0;
 float shininess = 32.0;
 float diffuseCoefficent = 1.0;
-float specularCoefficent = 0.5;
+float specularCoefficent = 0.4;
 
 vec3 blinn_phong(vec3 ambient, vec3 pos, vec3 normal){
 	vec3 ambientFinal = ambientCoefficent*ambient;
@@ -324,7 +328,7 @@ vec3 blinn_phong(vec3 ambient, vec3 pos, vec3 normal){
 	
   	vec3 diffuseFinal = ambientFinal*(diffuseCoefficent*diffuse)*dot(normal,l);
   	vec3 specularFinal = ambientFinal*(specularCoefficent*specular)*pow(max(dot(normalize(normal),h),0),shininess);
-  	vec3 colour = (diffuseFinal + specularFinal)*distFinal*8000;
+  	vec3 colour = (diffuseFinal + specularFinal)*distFinal*10000;
 	return colour;
 }
 
@@ -368,7 +372,16 @@ float mag(vec3 v){
 }
 float epsilon = 1e-3;
 
+vec3 translate(vec3 v, float last){
+	return (mvMatrixScene*vec4(v,last)).xyz;
+}
 
+int seed = 0;
+float rnd()
+{
+	seed = int(mod(float(seed)*1364.0+626.0, 509.0));
+	return float(seed)/509.0;
+}
 
 void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
 {
@@ -412,8 +425,10 @@ void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 			vec3 p = u*ray.dir;
 			intersect.point =  p;
 			vec3 col = pl.colour;
-			if (!bool((int((p.x+1024)*4)+int((p.z+1024)*4))%2)){
-				col = vec3(0,0,0);
+			if (!bool((int((p.x+epsilon+2048)*4)+int((p.z+epsilon+2048)*4))%2)){
+				col = -pl.colour;
+			} else {
+				col = pl.colour;
 			}
 			intersect.normal = normalize(pl.normal);
 			intersect.colour += col;
@@ -449,17 +464,6 @@ void Intersect(inout Ray r, inout Intersection i)
 	}
 	
 	
-}
-
-int seed = 0;
-float rnd()
-{
-	seed = int(mod(float(seed)*1364.0+626.0, 509.0));
-	return float(seed)/509.0;
-}
-
-vec3 translate(vec3 v, float last){
-	return (mvMatrixScene*vec4(v,last)).xyz;
 }
 
 vec3 computeShadow(in Intersection intersect)
@@ -532,9 +536,10 @@ void main()
 	ray.origin = vec3(0,0,0);
 	ray.dir = normalize(dir);
 
-//	ray.origin = translate(ray.origin, 1);
-//	ray.dir = translate(ray.dir,0);
-	lightSource = vec3(6,4,3);
+  	ray.origin = translate(ray.origin, 1);
+	ray.dir = translate(ray.dir,0);
+	lightSource = vec3(6,4,3)-ray.origin ;
+	//lightSource = translate(lightSource,1);
 	float closest = 1.0/0.0;
 
 	Intersection i;
@@ -548,7 +553,7 @@ void main()
 				closest = i.t;
 				colour += vec4(computeShadow(i)/(d+1),1);//pow(decay,pow(d,2))*vec4(blinn_phong(i.colour,i.point,i.normal,true),1);
 			}
-			ray.origin = i.point +epsilon*i.normal;
+			ray.origin = translate(i.point +epsilon*i.normal,1);
 			ray.dir = normalize(reflect(ray.dir,i.normal));
 			//ray.origin = translate(i.point +epsilon*i.normal,1);
 			//ray.dir = translate(normalize(reflect(ray.dir,i.normal)),0);
@@ -559,6 +564,7 @@ void main()
 	}
 	outcolour = colour;
 }
+
 
 
 
