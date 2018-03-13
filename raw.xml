@@ -317,12 +317,12 @@ const int raytraceDepth = 6;
 const int numSpheres = 6;
 vec3 lightSource = vec3(6,4,3);
 // Blinn-Phong
-vec3 diffuse = vec3(0.1,0.1,0.1);
-vec3 specular = vec3(0.1,0.1,0.1);
-float ambientCoefficent = 0.8;
-float shininess = 16.0;
-float diffuseCoefficent = 1.2;
-float specularCoefficent = 0.8;
+vec3 diffuse = vec3(1,1,1);
+vec3 specular = vec3(1,1,1);
+const float ambientCoefficent = 0.8;
+const float shininess = 32.0;
+const float diffuseCoefficent = 1.2e-1;
+const float specularCoefficent = 0.8e-1;
 
 float epsilon = 1e-2;
 vec3 blinn_phong(vec3 ambient, vec3 pos, vec3 normal){
@@ -431,7 +431,7 @@ void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
 	float denom = dot(ray.dir,pl.normal);
 	if (denom !=0){
 		float u = dot(pl.point-ray.origin,pl.normal)/denom;
-		if (u>epsilon){ // u<intersect.t && 
+		if (u>epsilon){
 			intersect.hit = 1;
 			vec3 p = ray.origin + u*ray.dir;
 			intersect.point =  p;
@@ -485,7 +485,7 @@ vec3 computeShadow(in Intersection intersect)
 	shadowRay.origin = intersect.point + epsilon*shadowRay.dir;
 	shadowRay.depth = 1;
 	Intersection i2;
-	i2.t = FLT_MAX;
+	i2.t = 1.0/0.0;
 	i2.hit = 0;
 	// see if there are any intersections
 	Intersect(shadowRay, i2);
@@ -530,7 +530,7 @@ void main()
 		sphere[k].radius2 = pow(sphere[k].radius,2);
 		sphere[k].transparency = 0.0;
 	}
-	// Make pink sphere slighltly transparent
+	// Make pink sphere slightly transparent
 	sphere[5].transparency = 0.15;
 
 	vec4 colour = vec4(0,0,0,1);
