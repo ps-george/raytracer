@@ -60,6 +60,28 @@ void main(void)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ]]></vertex>
 <geom>
 <![CDATA[#version 400
@@ -102,6 +124,28 @@ void main() {
   }
   EndPrimitive();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -168,6 +212,28 @@ void main(void)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ]]></frag>
 <R2TVert>
 <![CDATA[#version 400
@@ -209,6 +275,28 @@ void  main ()
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ]]></R2TVert>
 <R2TFrag>
 <![CDATA[#version 400
@@ -216,7 +304,8 @@ void  main ()
 in vec3 dir; 
 out vec4 outcolour;
 
-float FLT_MAX = 3.402823e38;
+#define FLT_MAX 1.0/0.0;
+#define PI 3.141592
 
 uniform mat4 mMatrix;
 uniform mat4 mvMatrix;
@@ -224,18 +313,40 @@ uniform mat4 mvMatrixScene;
 uniform mat4 pMatrix;
 uniform mat3 normalMatrix; //mv matrix without translation
 
-const int raytraceDepth = 42;
+const int raytraceDepth = 6;
 const int numSpheres = 6;
-const float decay = 0.4;
+vec3 lightSource = vec3(6,4,3);
+// Blinn-Phong
+vec3 diffuse = vec3(1,1,1);
+vec3 specular = vec3(1,1,1);
+const float ambientCoefficent = 0.8;
+const float shininess = 32.0;
+const float diffuseCoefficent = 1.2e-1;
+const float specularCoefficent = 0.8e-1;
 
-const vec3 lightSource = vec3(6,4,3);
+float epsilon = 1e-2;
+vec3 blinn_phong(vec3 ambient, vec3 pos, vec3 normal){
+	vec3 ambientFinal = ambientCoefficent*ambient;
+	vec3 l = normalize(lightSource-pos);
+	vec3 v = normalize(-pos);
+	vec3 r = normalize(2*dot(normal,l)*normal-l);
+	vec3 h = normalize(l+v);
+	float d = distance(pos,lightSource);
+	float distFinal = 1.0/(4.0*PI*d*d);
+	
+  	vec3 diffuseFinal = ambientFinal*(diffuseCoefficent*diffuse)*dot(normal,l);
+  	vec3 specularFinal = ambientFinal*(specularCoefficent*specular)*pow(max(dot(normalize(normal),h),0),shininess);
+  	vec3 colour = (diffuseFinal + specularFinal)*distFinal*10000;
+	return colour;
+}
+
+
 
 //example data structures
 struct Ray
 {
 	vec3 origin;
 	vec3 dir;
-	vec3 colour;
 	int depth;
 };
 struct Sphere
@@ -244,6 +355,7 @@ struct Sphere
 	float radius;
 	float radius2;
 	vec3 colour;
+	float transparency;
 };
 struct Plane
 {
@@ -257,6 +369,8 @@ struct Intersection
     float t; //closest hit
     vec3 point;	// hit point
     vec3 normal;	// normal
+	vec3 bp_colour;
+	vec3 colour;
     int hit;	//did it hit?
 	float r; // reflection constant
 };
@@ -265,59 +379,12 @@ float mag(vec3 v){
 	return dot(v,v);
 }
 
-void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
-{
-	float u1,u2,u;
-	vec3 deltaP = (sph.centre -ray.origin);
-	float d  = dot(deltaP,ray.dir);
-	float sub = mag(deltaP)-d*d;
-	if (sub>sph.radius2) return;
-	float sqr = sqrt(sph.radius2-sub);
-	u1 = d + sqr;
-	u2 = d - sqr;
-	u = (u1<u2 && u1>=0) ? u1 : u2;
-	
-	if (u>=0 && u<intersect.t){
-		intersect.point = u*ray.dir;
-		intersect.hit = 1;
-		intersect.normal = normalize(intersect.point - sph.centre);
-		ray.colour += pow(decay,ray.depth)*sph.colour;
-		intersect.t = u;
-	}
-	
-    
-}
-
-void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
-{	
-	float denom = dot(ray.dir,pl.normal);
-	if (denom >= 1e-10){
-		float u = dot(ray.origin-pl.point,pl.normal)/denom;
-		if (u<intersect.t && u >=0){
-			intersect.hit = 1;
-			vec3 p = u*ray.dir;
-			intersect.point = p;
-			vec3 col = pl.colour;
-			if (bool((int(p.x)+int(p.y)+int(p.z))%2)){
-				col = -pl.colour;
-			}
-			ray.colour += pow(decay,ray.depth)*col;
-			intersect.normal = pl.normal;
-			intersect.t = u;
-		}
-	}
-}
-
-Sphere sphere[numSpheres];
-Plane plane;
-void Intersect(inout Ray r, inout Intersection i)
-{
-	// For each object in the scene, do intersect function
-	plane_intersect(plane, r, i);
-
-	for (int j=0;j<numSpheres;j++){
-		sphere_intersect(sphere[j],r,i);
-	}
+vec3 translate(vec3 v, float last){
+	vec3 retval = (mvMatrixScene*vec4(v,last)).xyz;
+	if (bool(last))
+		return retval + vec3(0,0,40);
+	return retval;
+	 
 }
 
 int seed = 0;
@@ -326,23 +393,111 @@ float rnd()
 	seed = int(mod(float(seed)*1364.0+626.0, 509.0));
 	return float(seed)/509.0;
 }
-float epsilon = 1e-6;
-bool computeShadow(in Intersection intersect)
+
+void sphere_intersect(Sphere sph, inout Ray ray, inout Intersection intersect)
+{
+	float u1,u2,u;
+	vec3 deltaP = (sph.centre - ray.origin);
+	float d  = dot(deltaP,ray.dir);
+	float sub = mag(deltaP)-d*d;
+	if (sub>sph.radius2) return;
+	float sqr = sqrt(sph.radius2-sub);
+	u1 = d + sqr;
+	u2 = d - sqr;
+	if (u1<u2 && u1 > 0){
+		u = u1;
+	}
+	if (u2<u1 && u2 > 0){
+		u = u2;
+	}
+	if (u>0){
+		intersect.point = ray.origin + u*ray.dir;
+		intersect.hit = 1;
+		intersect.normal = normalize(intersect.point - sph.centre);
+		if (u<intersect.t){
+			intersect.colour = (sph.transparency)*intersect.colour
+							   +sph.colour;
+			intersect.bp_colour = (sph.transparency)*intersect.bp_colour
+								  +blinn_phong(intersect.colour,intersect.point,intersect.normal);
+			intersect.t=u;
+		}
+	}
+	
+    
+}
+
+void plane_intersect(Plane pl, inout Ray ray, inout Intersection intersect)
+{	
+	float denom = dot(ray.dir,pl.normal);
+	if (denom !=0){
+		float u = dot(pl.point-ray.origin,pl.normal)/denom;
+		if (u>epsilon){
+			intersect.hit = 1;
+			vec3 p = ray.origin + u*ray.dir;
+			intersect.point =  p;
+			vec3 col = pl.colour;
+			if (!bool((int((p.x+epsilon+2048)*4)+int((p.z+epsilon+2048)*4))%2)){
+				col = vec3(0,0,0);;
+			} else {
+				col = pl.colour;
+			}
+			intersect.normal = pl.normal;
+			intersect.colour += col;
+			intersect.bp_colour += blinn_phong(intersect.colour,intersect.point,intersect.normal);
+			
+			intersect.t = u;
+		}
+	}
+	
+}
+
+Sphere sphere[numSpheres];
+Plane plane;
+void Intersect(inout Ray r, inout Intersection i)
+{	
+	float closest = i.t;
+	Intersection intersect;
+
+	plane_intersect(plane, r, intersect);
+	if (bool(intersect.hit) && intersect.t < closest){
+		i = intersect;
+		closest = intersect.t;
+	}
+
+	// For each object in the scene, do intersect function
+	for (int j=0;j<numSpheres;j++){
+		intersect.t = closest;
+		sphere_intersect(sphere[j],r,intersect);
+		if (intersect.hit == 1 && intersect.t < closest){
+			i = intersect;
+			closest = intersect.t;
+		}
+	}
+	
+	
+}
+
+vec3 computeShadow(in Intersection intersect)
 {
 	// ray from intersect to the light source
 	Ray shadowRay;
-	
-	shadowRay.dir = -intersect.point + lightSource + seed;
-	shadowRay.origin = intersect.point + shadowRay.dir*epsilon ;
+	shadowRay.dir = normalize(-(intersect.point - lightSource));
+	shadowRay.origin = intersect.point + epsilon*shadowRay.dir;
 	shadowRay.depth = 1;
 	Intersection i2;
+	i2.t = 1.0/0.0;
 	i2.hit = 0;
-	i2.t = FLT_MAX;
 	// see if there are any intersections
 	Intersect(shadowRay, i2);
-	if (i2.t >0) return bool(i2.hit);
-	return false;
+	if (!bool(i2.hit)){
+		return intersect.bp_colour;
+	}
+	else  {
+		return intersect.bp_colour/4;
+	}
 }
+
+
 
 void main()
 {
@@ -370,32 +525,36 @@ void main()
 	plane.colour = vec3(1, 1, 1);
 	seed = int(mod(dir.x * dir.y * 39786038.0, 65536.0));
 	//scene definition end
+	
 	for (int k; k<numSpheres;k++){
 		sphere[k].radius2 = pow(sphere[k].radius,2);
+		sphere[k].transparency = 0.0;
 	}
-	// float epsilon = 1e-10;
+	// Make pink sphere slightly transparent
+	sphere[5].transparency = 0.15;
+
 	vec4 colour = vec4(0,0,0,1);
-	
 	Ray ray;
-	ray.origin = (mvMatrixScene*vec4(0,0,0,1)).xyz;// vec3(0,0,0);//(mvMatrix*vec4(0,0,0,1)).xyz;
-	ray.dir = -1*normalize(mvMatrixScene*vec4(dir,0)).xyz;
-	
-	for(int d = 0; d < 42;d++){
+  	ray.origin = translate(vec3(0,0,0), 1);
+	ray.dir = translate(normalize(dir),0);
+	lightSource = vec3(6,4,3);
+
+	float closest = 1.0/0.0;
+
+	Intersection i;
+	i.t = closest;
+
+	for(int d = 0; d < raytraceDepth;d++){
+
 		ray.depth = d;
-		ray.colour = vec3(0,0,0);
-		Intersection i;
-		i.hit = 0;
-		i.t = FLT_MAX;
 		Intersect(ray,i);
-		if (i.hit != 0) {
-			colour += pow(decay,d)*vec4(ray.colour,1);
-			
-			if (computeShadow(i)) {
-				colour = vec4(colour.xyz/1.5,0);
+		if (i.hit == 1) {
+			if (i.t<closest){
+				closest = i.t;
+				colour += vec4(computeShadow(i)/(d+1),1);
 			}
-			ray.origin = i.point;
-			ray.origin += epsilon * i.normal;
-			ray.dir = reflect(ray.dir,i.normal);
+			ray.origin = i.point +epsilon*i.normal;
+			ray.dir = normalize(reflect(ray.dir,i.normal));
 		} else {
 			break;
 		}
@@ -403,6 +562,28 @@ void main()
 	}
 	outcolour = colour;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
